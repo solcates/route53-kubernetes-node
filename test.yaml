@@ -1,0 +1,16 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: rocket-chat-service
+  labels:
+    dns: route53
+  annotations:
+    domainName: "chat.vormetric.com"
+spec:
+  selector:
+    role: chat
+    env: prod
+  ports:
+    - port: 80
+      targetPort: 3000
+  type: LoadBalancer
