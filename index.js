@@ -16,19 +16,19 @@ var kubernetesClientKeyData = process.env['KEY_FILE_DATA'];
 var awsCredentialsData = process.env["AWS_SHARED_CREDENTIALS_DATA"];
 
 if (kubernetesCAData) {
-    fs.writeFile("./ca.pem", new Buffer(kubernetesCAData, 'base64').toString("ascii"))
+    fs.writeFileSync("./ca.pem", new Buffer(kubernetesCAData, 'base64').toString("utf8"))
     kubernetesCAFile = "./ca.pem";
 }
 if (kubernetesClientCertData) {
-    fs.writeFile("./cert.pem", new Buffer(kubernetesClientCertData, 'base64').toString("ascii"));
+    fs.writeFileSync("./cert.pem", new Buffer(kubernetesClientCertData, 'base64').toString("utf8"));
     kubernetesClientCert = "./cert.pem";
 }
 if (kubernetesClientKeyData){
-    fs.writeFile("./key.pem", new Buffer(kubernetesClientKeyData, 'base64').toString("ascii"))
+    fs.writeFileSync("./key.pem", new Buffer(kubernetesClientKeyData, 'base64').toString("utf8"))
     kubernetesClientKey = "./key.pem"
 }
 if (awsCredentialsData){
-    fs.writeFile("./credentials", new Buffer(awsCredentialsData, 'base64').toString("ascii"));
+    fs.writeFileSync("./credentials", new Buffer(awsCredentialsData, 'base64').toString("utf8"));
     awsCredentials = "./credentials"
 }
 
@@ -44,9 +44,9 @@ var client = new Client({
     host: kubernetesService,
     protocol: 'https',
     version: 'v1',
-    ca: fs.readFileSync(kubernetesCAFile),
-    cert: fs.readFileSync(kubernetesClientCert),
-    key: fs.readFileSync(kubernetesClientKey)
+    ca: fs.readFileSync(kubernetesCAFile,"utf8"),
+    cert: fs.readFileSync(kubernetesClientCert,"utf8"),
+    key: fs.readFileSync(kubernetesClientKey,"utf8")
 
 });
 
@@ -95,6 +95,9 @@ var updateDNS = function (action, zone_id, domainName, elb_address) {
 var workLoop = function (done) {
     // Get All Services
     client.services.get(function (err, services) {
+        if (err){
+            console.error(err)
+        }
         services[0].items.forEach(function (item) {
             // Look for those with dns=route53 annotations
             if ("dns" in item.metadata.labels) {
