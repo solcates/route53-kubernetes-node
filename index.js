@@ -95,7 +95,47 @@ var updateDNS = function (action, zone_id, domainName, elb_address) {
     })
 }
 
+var updateDNSA = function(action, zone_id, domainName, ips){
+    var params = {
+        "HostedZoneId": zone_id, // our Id from the first call
+        "ChangeBatch": {
+            "Changes": [
+                {
+                    "Action": action,
+                    "ResourceRecordSet": {
+                        "Name": domainName,
+                        "Type": "A",
+                        "TTL": 60,
+                        "ResourceRecords": ips
+                    }
+                }
+            ]
+        }
+    };
+    // console.log(params)
+    awsR53Client.changeResourceRecordSets(params, function (err, result) {
+        if (err) {
+            console.error(err)
+        } else {
+            // Successfully updated your record... not much to do now :)
+        }
+    })
+}
 
+// function arraysEqual(arr1, arr2) {
+//     var array
+//     if(arr1.length !== arr2.length)
+//         return false;
+//     for(var i = arr1.length; i--;) {
+//         if(arr1[i] !== arr2[i])
+//             return false;
+//     }
+//
+//     return true;
+// }
+function arraysEqual(a1,a2) {
+    return JSON.stringify(a1)==JSON.stringify(a2);
+}
 // Workloop to poll for route53 mapped services
 var workLoop = function (done) {
     // Get All Services
@@ -110,88 +150,150 @@ var workLoop = function (done) {
                     if ("dns" in item.metadata.labels) {
                         if (item.metadata.annotations) {
                             if (item.metadata.annotations.domainName) {
-                                if (item.status.loadBalancer.ingress) {
-                                    var lbpoint = item.status.loadBalancer.ingress[0].hostname;
-                                    var domainName = item.metadata.annotations.domainName;
-                                    var domainRoot = domainName.substring(domainName.indexOf(".") + 1) + "."
-                                    awsELBClient.describeLoadBalancers(function (err, lbs) {
-                                        if (err) {
-                                            console.error("Error describing ELB", err);
-                                        } else {
-                                            // Loop through ELBs looking for our services match...
-                                            lbs.LoadBalancerDescriptions.forEach(function (lb) {
-                                                // find match...
-                                                if (lb.DNSName == lbpoint) {
-                                                    // Get the domains hostedZone ID
-                                                    awsELBClient.describeInstanceHealth({LoadBalancerName: lb.LoadBalancerName}, function (err, data) {
-                                                        if (err) {
-                                                            console.error(err)
-                                                        } else {
-                                                            var ready = true;
-                                                            data.InstanceStates.forEach(function (instance) {
-                                                                if (instance.State != "InService") {
-                                                                    ready = false;
-                                                                }
-                                                            })
-                                                            if (ready) {
-                                                                awsR53Client.listHostedZones(function (err, data) {
-                                                                    if (err) {
-                                                                        console.error(err)
-                                                                    } else {
-                                                                        // console.log(data.HostedZones)
-                                                                        var zones = data.HostedZones;
-                                                                        zones.forEach(function (zone) {
-                                                                            if (zone.Name == domainRoot) {
-                                                                                var updated = false;
-                                                                                awsR53Client.listResourceRecordSets({HostedZoneId: zone.Id}, function (err, recordset) {
-                                                                                    // console.log("zonelist", recordset)
-                                                                                    recordset.ResourceRecordSets.forEach(function (record) {
-                                                                                            // console.log(record)
-                                                                                            if (record.Name == (domainName + ".")) {
-                                                                                                updated = true;
-                                                                                                var rr = record.ResourceRecords[0]
-                                                                                                if (rr.Value == lb.DNSName) {
-                                                                                                    if (debug) {
-                                                                                                        console.log("Recordset already set for:", domainName)
-                                                                                                    }
-                                                                                                } else {
+                                var domainName = item.metadata.annotations.domainName;
+                                var domainRoot = domainName.substring(domainName.indexOf(".") + 1) + "."
+                                if (item.spec.type == "LoadBalancer") {
+                                    if (item.status.loadBalancer.ingress) {
+                                        var lbpoint = item.status.loadBalancer.ingress[0].hostname;
 
-                                                                                                    console.log("Changing ResourceSet:", domainName, "=>", lb.DNSName);
-                                                                                                    updateDNS("UPSERT", zone.Id, domainName, lb.DNSName)
-                                                                                                }
-
-                                                                                            }
-                                                                                        }
-                                                                                    )
-                                                                                    if (!updated) {
-                                                                                        console.log("Inserting ResourceSet:", domainName, "=>", lb.DNSName);
-
-                                                                                        updateDNS("CREATE", zone.Id, domainName, lb.DNSName)
-                                                                                    }
-                                                                                })
-                                                                            }
-                                                                        })
+                                        awsELBClient.describeLoadBalancers(function (err, lbs) {
+                                            if (err) {
+                                                console.error("Error describing ELB", err);
+                                            } else {
+                                                // Loop through ELBs looking for our services match...
+                                                lbs.LoadBalancerDescriptions.forEach(function (lb) {
+                                                    // find match...
+                                                    if (lb.DNSName == lbpoint) {
+                                                        // Get the domains hostedZone ID
+                                                        awsELBClient.describeInstanceHealth({LoadBalancerName: lb.LoadBalancerName}, function (err, data) {
+                                                            if (err) {
+                                                                console.error(err)
+                                                            } else {
+                                                                var ready = true;
+                                                                data.InstanceStates.forEach(function (instance) {
+                                                                    if (instance.State != "InService") {
+                                                                        ready = false;
                                                                     }
                                                                 })
-                                                            } else {
-                                                                if (debug) {
-                                                                    console.log("waiting for ELB to be inservice before swapping DNS entries")
+                                                                if (ready) {
+                                                                    awsR53Client.listHostedZones(function (err, data) {
+                                                                        if (err) {
+                                                                            console.error(err)
+                                                                        } else {
+                                                                            // console.log(data.HostedZones)
+                                                                            var zones = data.HostedZones;
+                                                                            zones.forEach(function (zone) {
+                                                                                if (zone.Name == domainRoot) {
+                                                                                    var updated = false;
+                                                                                    awsR53Client.listResourceRecordSets({HostedZoneId: zone.Id}, function (err, recordset) {
+                                                                                        // console.log("zonelist", recordset)
+                                                                                        recordset.ResourceRecordSets.forEach(function (record) {
+                                                                                                // console.log(record)
+                                                                                                if (record.Name == (domainName + ".")) {
+                                                                                                    updated = true;
+                                                                                                    var rr = record.ResourceRecords[0]
+                                                                                                    if (rr.Value == lb.DNSName) {
+                                                                                                        if (debug) {
+                                                                                                            console.log("Recordset already set for:", domainName)
+                                                                                                        }
+                                                                                                    } else {
 
+                                                                                                        console.log("Changing ResourceSet:", domainName, "=>", lb.DNSName);
+                                                                                                        updateDNS("UPSERT", zone.Id, domainName, lb.DNSName)
+                                                                                                    }
+
+                                                                                                }
+                                                                                            }
+                                                                                        )
+                                                                                        if (!updated) {
+                                                                                            console.log("Inserting ResourceSet:", domainName, "=>", lb.DNSName);
+
+                                                                                            updateDNS("CREATE", zone.Id, domainName, lb.DNSName)
+                                                                                        }
+                                                                                    })
+                                                                                }
+                                                                            })
+                                                                        }
+                                                                    })
+                                                                } else {
+                                                                    if (debug) {
+                                                                        console.log("waiting for ELB to be inservice before swapping DNS entries")
+
+                                                                    }
                                                                 }
                                                             }
+                                                        })
+
+                                                    }
+                                                })
+                                            }
+                                        })
+                                    } else {
+                                        if (debug) {
+                                            console.log("Loadbalancer not ready for service:", item.metadata.name)
+
+                                        }
+                                    }
+                                } else {
+                                    // TODO Handle NodePorts instead of just LoadBalancers
+                                    if (item.spec.type == "NodePort") {
+                                        // console.log(domainName)
+                                        var ips = []
+                                        client.nodes.get(function(err,nodes){
+                                            // console.log(nodes)
+                                            var nn = nodes[0];
+                                            nn.items.forEach(function(n){
+                                                n.status.addresses.forEach(function(address){
+                                                    if (address.type == "ExternalIP"){
+                                                        // console.log(address);
+                                                        ips.push({Value:address.address});
+                                                    }
+                                                })
+                                                // console.log(n.status.addresses);
+                                            })
+                                            awsR53Client.listHostedZones(function (err, data) {
+                                                if (err) {
+                                                    console.error(err)
+                                                } else {
+                                                    // console.log(data.HostedZones)
+                                                    var zones = data.HostedZones;
+                                                    zones.forEach(function (zone) {
+                                                        if (zone.Name == domainRoot) {
+                                                            var updated = false;
+                                                            awsR53Client.listResourceRecordSets({HostedZoneId: zone.Id}, function (err, recordset) {
+                                                                // console.log("zonelist", recordset)
+                                                                recordset.ResourceRecordSets.forEach(function (record) {
+                                                                        // console.log(record)
+                                                                        if (record.Name == (domainName + ".")) {
+                                                                            updated = true;
+                                                                            var rr = record.ResourceRecords
+                                                                            if (arraysEqual(rr,ips)) {
+                                                                                if (debug) {
+                                                                                    console.log("Recordset already set for:", domainName)
+                                                                                }
+                                                                            } else {
+
+                                                                                console.log("Changing ResourceSet:", domainName, "=>", ips);
+                                                                                updateDNSA("UPSERT", zone.Id, domainName, ips)
+                                                                            }
+
+                                                                        }
+                                                                    }
+                                                                )
+                                                                if (!updated) {
+                                                                    console.log("Inserting ResourceSet:", domainName, "=>", lb.DNSName);
+
+                                                                    updateDNS("CREATE", zone.Id, domainName, lb.DNSName)
+                                                                }
+                                                            })
                                                         }
                                                     })
-
                                                 }
                                             })
-                                        }
-                                    })
-                                } else {
-                                    if (debug) {
-                                        console.log("Loadbalancer not ready for service:", item.metadata.name)
-
+                                        })
                                     }
                                 }
+
                             } else {
                                 if (debug) {
                                     console.error("No domainName annotation for service:", item.metadata.name)
@@ -210,6 +312,7 @@ var workLoop = function (done) {
             }
 
         })
+        // TODO: Consolidate any multinodes to this...
         setTimeout(function () {
             workLoop();
         }, timeout)

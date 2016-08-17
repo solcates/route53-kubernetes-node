@@ -1,1 +1,7 @@
 node_modules
+ca.pem
+cert.pem
+credentials
+key.pem
+test.yaml
+old_route53.go
